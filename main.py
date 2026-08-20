@@ -5,6 +5,7 @@ Menu - Cifrado y Decifrado: César, Monoalfabética, Afín.
 from math import gcd
 from afin import affine_cipher
 from caesarcipher import caesar_cipher
+from monoalphabetic.monoalphabetic import monoalphabetic_cipher
 from decipher.decipher import Decipher
 
 _decipher_engine = Decipher()
