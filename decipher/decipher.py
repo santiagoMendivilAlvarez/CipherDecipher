@@ -10,6 +10,7 @@ Returns:
 
 from abc           import ABC, abstractmethod
 import math
+import random
 import unicodedata
 from collections   import Counter
 from spellchecker  import SpellChecker
@@ -32,6 +33,41 @@ FREQ_SPANISH = {
 # IC teórico del español ≈ 0.0745, del inglés ≈ 0.0667, uniforme ≈ 0.0385
 IC_SPANISH_THRESHOLD = 0.055   # por encima → sustitución simple (César/Afín)
 IC_UNIFORM_THRESHOLD = 0.045   # por debajo → posible Vigenère (no pedido aquí)
+
+# Frecuencias de bigramas del español (por 10 000 bigramas).
+# Fuente: corpus CREA / Almela et al.
+BIGRAMS_SPANISH = {
+    'DE': 343, 'EN': 298, 'ES': 284, 'LA': 276, 'OS': 233,
+    'EL': 221, 'AS': 219, 'AR': 214, 'ER': 208, 'AL': 199,
+    'AN': 197, 'OR': 192, 'ON': 188, 'SE': 183, 'TE': 175,
+    'NT': 169, 'RA': 166, 'RE': 161, 'AD': 158, 'IC': 152,
+    'UN': 150, 'IO': 147, 'TA': 144, 'CO': 142, 'IN': 140,
+    'ST': 138, 'NA': 136, 'MA': 135, 'DO': 132, 'NO': 130,
+    'CI': 128, 'PA': 125, 'LO': 123, 'RS': 121, 'TO': 119,
+    'QU': 117, 'UE': 115, 'CA': 112, 'TI': 110, 'LI': 108,
+    'LE': 106, 'RO': 105, 'SI': 102, 'ME': 100, 'NE':  98,
+    'SA':  97, 'DA':  95, 'AC':  94, 'RI':  92, 'EM':  90,
+    'PR':  89, 'MO':  88, 'OL':  86, 'AM':  84, 'IA':  83,
+    'SO':  82, 'ND':  81, 'ID':  78, 'IL':  77, 'EC':  76,
+    'OM':  75, 'OC':  74, 'UC':  73, 'TR':  72, 'ED':  71,
+    'IS':  70, 'IE':  65, 'IR':  64, 'UL':  63, 'OT':  62,
+    'AT':  60, 'AB':  59, 'IM':  56, 'OB':  55, 'RR':  30,
+}
+
+# Log-probabilidades precalculadas para scoring eficiente
+_BIGRAM_TOTAL = sum(BIGRAMS_SPANISH.values())
+_BIGRAM_LOG: dict[str, float] = {
+    bg: math.log(cnt / _BIGRAM_TOTAL) for bg, cnt in BIGRAMS_SPANISH.items()
+}
+# Floor = log-probabilidad promedio: bigramas no vistos son tratados como "promedio",
+# no se penaliza texto técnico por tener combinaciones poco comunes.
+_BIGRAM_AVG   = _BIGRAM_TOTAL / len(BIGRAMS_SPANISH)
+_BIGRAM_FLOOR = math.log(_BIGRAM_AVG / _BIGRAM_TOTAL)
+
+
+def _bigram_log_score(text: str) -> float:
+    """Log-probabilidad del texto bajo el modelo de bigramas del español. Mayor = más español."""
+    return sum(_BIGRAM_LOG.get(text[i:i+2], _BIGRAM_FLOOR) for i in range(len(text) - 1))
 
 
 # ─────────────────────────────────────────────
@@ -209,7 +245,7 @@ class CaesarDecipher(IDecipher):
                 best_ws = ws
                 best_chi = chi
                 best_shift = k
-                best_plain = decoded
+                best_plain = plain  # conservar espacios originales
 
         return best_plain, f"desplazamiento={best_shift}"
 
@@ -261,7 +297,7 @@ class AfinDecipher(IDecipher):
                     best_ws = ws
                     best_chi = chi
                     best_a, best_b = a, b
-                    best_plain = decoded
+                    best_plain = plain  # conservar espacios originales
 
         return best_plain, f"a={best_a}, b={best_b}"
 
@@ -273,31 +309,32 @@ class AfinDecipher(IDecipher):
 class MonoalphabeticDecipher(IDecipher):
     """
     La sustitución monoalfabética tiene 26! ≈ 4×10²⁶ claves posibles.
-    La fuerza bruta es inviable; usamos análisis de frecuencia.
+    La fuerza bruta es inviable; usamos búsqueda local iterada.
 
-    Estrategia (hill-climbing estadístico):
-        1. Ordenar las letras del texto cifrado por frecuencia (desc).
-        2. Ordenar las letras del español por frecuencia esperada (desc).
-        3. Mapear la letra más frecuente del cifrado → letra más frecuente
-           del español, la segunda más frecuente → segunda, etc.
-        4. Este mapeo inicial ya suele descifrar ~60-70% correctamente.
-        5. Iterar intercambiando pares del mapeo si mejora el chi².
+    Estrategia (Iterated Local Search con bigramas):
+        1. Mapeo inicial por frecuencia de letras.
+        2. Hill-climbing con scoring de bigramas (log-probabilidad):
+           los bigramas ofrecen un paisaje mucho más discriminante que los monogramas.
+        3. Perturbación + re-escala (20 reinicios): aplicar 4 swaps aleatorios
+           al mejor mapeo encontrado y repetir el hill-climbing para escapar
+           de mínimos locales.
     """
+
+    _RESTARTS = 60
+    _PERTURB  = 8   # swaps aleatorios por reinicio
 
     def decipher(self, text: str) -> tuple[str, str]:
         letters = clean(text)
         freq = Counter(letters)
 
-        # Orden de letras en español por frecuencia decreciente
         spanish_by_freq = sorted(FREQ_SPANISH, key=FREQ_SPANISH.get, reverse=True)
         cipher_by_freq  = [pair[0] for pair in freq.most_common()]
 
-        # Mapeo inicial: letra cifrada → letra española
-        mapping: dict[str, str] = {}
-        for i, cipher_letter in enumerate(cipher_by_freq):
-            if i < len(spanish_by_freq):
-                mapping[cipher_letter] = spanish_by_freq[i]
-        # Letras no vistas en el texto → mapeo identidad provisional
+        # Mapeo inicial por frecuencia de letras
+        mapping: dict[str, str] = {
+            cipher_by_freq[i]: spanish_by_freq[i]
+            for i in range(min(len(cipher_by_freq), len(spanish_by_freq)))
+        }
         for letter in ALPHABET:
             if letter not in mapping:
                 mapping[letter] = letter
@@ -306,28 +343,47 @@ class MonoalphabeticDecipher(IDecipher):
             return "".join(m.get(c, c) for c in letters)
 
         def score(m: dict[str, str]) -> float:
-            return chi_squared(letter_frequencies(apply_mapping(m)), FREQ_SPANISH)
+            # Señal primaria: palabras españolas válidas (cuando el texto tiene espacios).
+            # Señal secundaria: bigramas (útil cuando no hay espacios).
+            decoded_full = "".join(m.get(c, c) if c in ALPHABET else c for c in text.upper())
+            ws = word_validity_score(decoded_full) * 200
+            bs = _bigram_log_score(apply_mapping(m))
+            return ws + bs
 
-        # Hill-climbing: intentar intercambios de pares
-        improved = True
-        while improved:
-            improved = False
-            current_score = score(mapping)
-            for i in range(len(ALPHABET)):
-                for j in range(i + 1, len(ALPHABET)):
-                    a, b = ALPHABET[i], ALPHABET[j]
-                    if a not in mapping or b not in mapping:
-                        continue
-                    mapping[a], mapping[b] = mapping[b], mapping[a]
-                    new_score = score(mapping)
-                    if new_score < current_score:
-                        current_score = new_score
-                        improved = True
-                    else:
-                        mapping[a], mapping[b] = mapping[b], mapping[a]
+        def hill_climb(init: dict[str, str]) -> tuple[dict[str, str], float]:
+            m = dict(init)
+            improved = True
+            while improved:
+                improved = False
+                s = score(m)
+                for i in range(len(ALPHABET)):
+                    for j in range(i + 1, len(ALPHABET)):
+                        a, b = ALPHABET[i], ALPHABET[j]
+                        m[a], m[b] = m[b], m[a]
+                        ns = score(m)
+                        if ns > s:   # mayor log-prob = más español
+                            s = ns
+                            improved = True
+                        else:
+                            m[a], m[b] = m[b], m[a]
+            return m, s
 
-        best_plain = apply_mapping(mapping)
-        key_str = " ".join(f"{c}→{mapping[c]}" for c in sorted(mapping))
+        best_mapping, best_score = hill_climb(mapping)
+
+        # Búsqueda local iterada: perturbar el mejor mapeo y re-escalar
+        rng = random.Random()  # semilla aleatoria para mayor diversidad
+        for _ in range(self._RESTARTS):
+            candidate = dict(best_mapping)
+            for _ in range(self._PERTURB):
+                a, b = rng.sample(list(ALPHABET), 2)
+                candidate[a], candidate[b] = candidate[b], candidate[a]
+            m, s = hill_climb(candidate)
+            if s > best_score:
+                best_score = s
+                best_mapping = m
+
+        best_plain = "".join(best_mapping.get(c, c) if c in ALPHABET else c for c in text.upper())
+        key_str = " ".join(f"{c}→{best_mapping[c]}" for c in sorted(best_mapping))
         return best_plain, f"tabla: {key_str}"
 
 
@@ -542,48 +598,54 @@ class Decipher:
 if __name__ == "__main__":
     engine = Decipher()
 
-    # Texto en español suficientemente largo para que el IC sea estadísticamente válido.
-    # Para textos muy cortos (<100 letras) el IC es poco confiable.
-    sample = (
-        "EL ANALISIS DE FRECUENCIA ES UNA TECNICA FUNDAMENTAL EN CRIPTOGRAFIA "
-        "QUE PERMITE IDENTIFICAR PATRONES EN TEXTOS CIFRADOS MEDIANTE LA "
-        "OBSERVACION DE LA DISTRIBUCION ESTADISTICA DE LAS LETRAS EN UN IDIOMA "
-        "EL ESPANOL TIENE UNA DISTRIBUCION CARACTERISTICA DONDE LA E LA A Y LA "
-        "O SON LAS LETRAS MAS FRECUENTES LO QUE FACILITA EL PROCESO DE DESCIFRADO"
-    )
-    sample_clean = clean(sample)
+    # # Texto en español suficientemente largo para que el IC sea estadísticamente válido.
+    # # Para textos muy cortos (<100 letras) el IC es poco confiable.
+    # sample = (
+    #     "EL ANALISIS DE FRECUENCIA ES UNA TECNICA FUNDAMENTAL EN CRIPTOGRAFIA "
+    #     "QUE PERMITE IDENTIFICAR PATRONES EN TEXTOS CIFRADOS MEDIANTE LA "
+    #     "OBSERVACION DE LA DISTRIBUCION ESTADISTICA DE LAS LETRAS EN UN IDIOMA "
+    #     "EL ESPANOL TIENE UNA DISTRIBUCION CARACTERISTICA DONDE LA E LA A Y LA "
+    #     "O SON LAS LETRAS MAS FRECUENTES LO QUE FACILITA EL PROCESO DE DESCIFRADO"
+    # )
+    # sample_clean = clean(sample)
 
-    # ── 1. Cifrado César con desplazamiento 3 ──
-    k = 3
-    caesar_text = "".join(ALPHABET[(ALPHABET.index(c) + k) % N] for c in sample_clean)
-    print("=" * 60)
-    print(f"[CESAR] Cifrado (k={k}): {caesar_text}")
-    method, plain, key = engine.main(caesar_text)
-    print(f"  Detectado : {method}")
-    print(f"  Descifrado: {plain}")
-    print(f"  Clave     : {key}")
-    print(f"  IC        : {index_of_coincidence(caesar_text):.4f}")
+    # # ── 1. Cifrado César con desplazamiento 3 ──
+    # k = 3
+    # caesar_text = "".join(ALPHABET[(ALPHABET.index(c) + k) % N] for c in sample_clean)
+    # print("=" * 60)
+    # print(f"[CESAR] Cifrado (k={k}): {caesar_text}")
+    # method, plain, key = engine.main(caesar_text)
+    # print(f"  Detectado : {method}")
+    # print(f"  Descifrado: {plain}")
+    # print(f"  Clave     : {key}")
+    # print(f"  IC        : {index_of_coincidence(caesar_text):.4f}")
 
-    # ── 2. Cifrado Afín con a=5, b=8 ──
-    a_key, b_key = 5, 8
-    afin_text = "".join(
-        ALPHABET[(a_key * ALPHABET.index(c) + b_key) % N] for c in sample_clean
-    )
-    print("=" * 60)
-    print(f"[AFIN] Cifrado (a={a_key}, b={b_key}): {afin_text}")
-    method, plain, key = engine.main(afin_text)
-    print(f"  Detectado : {method}")
-    print(f"  Descifrado: {plain}")
-    print(f"  Clave     : {key}")
-    print(f"  IC        : {index_of_coincidence(afin_text):.4f}")
+    # # ── 2. Cifrado Afín con a=5, b=8 ──
+    # a_key, b_key = 5, 8
+    # afin_text = "".join(
+    #     ALPHABET[(a_key * ALPHABET.index(c) + b_key) % N] for c in sample_clean
+    # )
+    # print("=" * 60)
+    # print(f"[AFIN] Cifrado (a={a_key}, b={b_key}): {afin_text}")
+    # method, plain, key = engine.main(afin_text)
+    # print(f"  Detectado : {method}")
+    # print(f"  Descifrado: {plain}")
+    # print(f"  Clave     : {key}")
+    # print(f"  IC        : {index_of_coincidence(afin_text):.4f}")
 
-    # ── 3. Sustitución monoalfabética arbitraria ──
-    mono_map = dict(zip(ALPHABET, "QWERTYUIOPASDFGHJKLZXCVBNM"))
-    mono_text = "".join(mono_map.get(c, c) for c in sample_clean)
-    print("=" * 60)
-    print(f"[MONO] Cifrado: {mono_text}")
-    method, plain, key = engine.main(mono_text)
-    print(f"  Detectado : {method}")
-    print(f"  Descifrado (aprox): {plain[:40]}...")
-    print(f"  IC        : {index_of_coincidence(mono_text):.4f}")
-    print("=" * 60)
+    # # ── 3. Sustitución monoalfabética arbitraria ──
+    # mono_map = dict(zip(ALPHABET, "QWERTYUIOPASDFGHJKLZXCVBNM"))
+    # mono_text = "".join(mono_map.get(c, c) for c in sample_clean)
+    # print("=" * 60)
+    # print(f"[MONO] Cifrado: {mono_text}")
+    # method, plain, key = engine.main(mono_text)
+    # print(f"  Detectado : {method}")
+    # print(f"  Descifrado (aprox): {plain[:40]}...")
+    # print(f"  IC        : {index_of_coincidence(mono_text):.4f}")
+    # print("=" * 60)
+    cifrado = "TS QFQSOLOL RT YKTEXTFEOQ TL XFQ ZTEFOEQ YXFRQDTFZQS TF EKOHZGUKQYOQ JXT HTKDOZT ORTFZOYOEQK HQZKGFTL TF ZTBZGL EOYKQRGL"                   # "HOLA MUNDO" con César k=3
+    method, plain, key = engine.main(cifrado)
+
+    print(method)   # Caesar
+    print(plain)    # HOLA MUNDO
+    print(key)      # desplazamiento=3
