@@ -1,18 +1,4 @@
-import json
-import os
-
-
-def load_alphabet() -> tuple[dict[str, int], dict[int, str]]:
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    file_path = os.path.join(base_dir, "data", "alphabet.json")
-
-    with open(file_path, "r", encoding="utf-8") as f:
-        raw_data = json.load(f)
-
-    char_to_index = {char.upper(): int(idx) for char, idx in raw_data.items()}
-    index_to_char = {int(idx): char.upper() for char, idx in raw_data.items()}
-
-    return char_to_index, index_to_char
+from data import load_alphabet
 
 
 def caesar_cipher(text: str, shift: int) -> str:
