@@ -5,8 +5,9 @@ Menu - Cifrado y Decifrado: César, Monoalfabética, Afín.
 from math import gcd
 from afin import affine_cipher
 from caesarcipher import caesar_cipher
-#from monoalphabetic import monoalphabetic_cipher
-#from decipher import ??
+from decipher.decipher import Decipher
+
+_decipher_engine = Decipher()
 
 # -- Auxiliares --
 def pedir_entero(mensaje: str) -> int:
@@ -61,13 +62,19 @@ def menu_monoalfabetico():
     # print("Resultado:", monoalphabetic_cipher(texto, clave))
 
 def menu_decifrado():
-    print("\n >> Decifrado")
-    print("WIP . . .")
-    # TODO
-    # texto = input("Texto cifrado: ")
-    # aqui la neta ni se como le vas a hacer amistad ○|￣|_
-    # print("Cifrado detectado:", ?)
-    # print("Texto descifrado:", ?)
+    print("\n >> Descifrado automatico")
+    texto = input("Texto cifrado: ").strip()
+    if not texto:
+        print("Texto vacio.")
+        return
+
+    method, plain, key = _decipher_engine.main(texto)
+
+    print("--------------------------")
+    print(f"Cifrado detectado : {method}")
+    print(f"Texto descifrado  : {plain}")
+    print(f"Clave encontrada  : {key}")
+    print("--------------------------")
 
 
 # -- Menu principal --

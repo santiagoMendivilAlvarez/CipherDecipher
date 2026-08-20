@@ -20,7 +20,7 @@ ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 N = len(ALPHABET)  # 26
 
 # Frecuencias esperadas del español (en porcentaje, ordenadas A-Z).
-# Fuente: análisis estándar de corpus en castellano.
+# Fuente: analisis estandar de corpus en castellano.
 FREQ_SPANISH = {
     'A': 12.53, 'B': 1.42, 'C': 4.68, 'D': 5.86, 'E': 13.68,
     'F': 0.69,  'G': 1.01, 'H': 0.70, 'I': 6.25,  'J': 0.44,
@@ -30,9 +30,9 @@ FREQ_SPANISH = {
     'Z': 0.52,
 }
 
-# IC teórico del español ≈ 0.0745, del inglés ≈ 0.0667, uniforme ≈ 0.0385
-IC_SPANISH_THRESHOLD = 0.055   # por encima → sustitución simple (César/Afín)
-IC_UNIFORM_THRESHOLD = 0.045   # por debajo → posible Vigenère (no pedido aquí)
+# IC teorico del español ≈ 0.0745, del inglés ≈ 0.0667, uniforme ≈ 0.0385
+IC_SPANISH_THRESHOLD = 0.055   # por encima → sustitucion simple (Caesar/Afin)
+IC_UNIFORM_THRESHOLD = 0.045   # por debajo → posible Vigenere 
 
 # Frecuencias de bigramas del español (por 10 000 bigramas).
 # Fuente: corpus CREA / Almela et al.
@@ -60,13 +60,15 @@ _BIGRAM_LOG: dict[str, float] = {
     bg: math.log(cnt / _BIGRAM_TOTAL) for bg, cnt in BIGRAMS_SPANISH.items()
 }
 # Floor = log-probabilidad promedio: bigramas no vistos son tratados como "promedio",
-# no se penaliza texto técnico por tener combinaciones poco comunes.
+# no se penaliza texto tecnico por tener combinaciones poco comunes.
 _BIGRAM_AVG   = _BIGRAM_TOTAL / len(BIGRAMS_SPANISH)
 _BIGRAM_FLOOR = math.log(_BIGRAM_AVG / _BIGRAM_TOTAL)
 
 
 def _bigram_log_score(text: str) -> float:
-    """Log-probabilidad del texto bajo el modelo de bigramas del español. Mayor = más español."""
+    """
+    Log-probabilidad del texto bajo el modelo de bigramas del español. Mayor = más español.
+    """
     return sum(_BIGRAM_LOG.get(text[i:i+2], _BIGRAM_FLOOR) for i in range(len(text) - 1))
 
 
@@ -74,7 +76,7 @@ def _bigram_log_score(text: str) -> float:
 #  VALIDACIÓN NLP (DICCIONARIO ESPAÑOL)
 # ─────────────────────────────────────────────
 
-# Instancia única; carga el diccionario de español una sola vez al importar.
+# Instancia unica; carga el diccionario de español una sola vez al importar.
 _es_checker = SpellChecker(language='es')
 
 
@@ -85,7 +87,7 @@ def _strip_accents(s: str) -> str:
     )
 
 
-# Conjunto de palabras españolas sin acentos, calculado una vez al cargar el módulo.
+# Conjunto de palabras españolas sin acentos, calculado una vez al cargar el modulo.
 # Permite reconocer 'dias' como forma de 'días', 'tambien' de 'también', etc.
 _es_words_no_accent: frozenset = frozenset(
     _strip_accents(w) for w in _es_checker.word_frequency.keys()
@@ -94,12 +96,12 @@ _es_words_no_accent: frozenset = frozenset(
 
 def _is_spanish_word(word: str) -> bool:
     """
-    True si la palabra es español válido. Maneja:
-      1. Búsqueda directa en el diccionario.
-      2. Formas sin tilde (dias → días, tambien → también).
+    True si la palabra es español valido. Maneja:
+      1. Busqueda directa en el diccionario.
+      2. Formas sin tilde (dias -> días, tambien -> también).
       3. Plurales simples: elimina sufijo -s / -es y reintenta (buenos → bueno).
          El stem debe tener al menos 4 letras para evitar falsos positivos
-         con conjunciones y artículos cortos (e.g., 'aun', 'nu').
+         con conjunciones y articulos cortos (e.g., 'aun', 'nu').
     """
     if word in _es_checker or word in _es_words_no_accent:
         return True
@@ -112,7 +114,9 @@ def _is_spanish_word(word: str) -> bool:
 
 
 def _shift_text(text: str, k: int) -> str:
-    """Aplica descifrado César (−k) conservando espacios y puntuación."""
+    """
+    Aplica descifrado Caesar (-k) conservando espacios y puntuacion.
+    """
     result = []
     for c in text.upper():
         if c in ALPHABET:
@@ -123,7 +127,9 @@ def _shift_text(text: str, k: int) -> str:
 
 
 def _afin_text(text: str, a_inv: int, b: int) -> str:
-    """Aplica descifrado Afín conservando espacios y puntuación."""
+    """
+    Aplica descifrado Afin conservando espacios y puntuacion.
+    """
     result = []
     for c in text.upper():
         if c in ALPHABET:
@@ -135,7 +141,7 @@ def _afin_text(text: str, a_inv: int, b: int) -> str:
 
 def word_validity_score(text: str) -> float:
     """
-    Fracción de tokens separados por espacio que son palabras españolas válidas.
+    Fraccion de tokens separados por espacio que son palabras españolas validas.
     Retorna 0.0 si el texto no tiene espacios (no se puede segmentar en palabras).
     """
     words = [w.lower() for w in text.split() if w.isalpha() and len(w) > 1]
@@ -145,28 +151,30 @@ def word_validity_score(text: str) -> float:
 
 
 # ─────────────────────────────────────────────
-#  UTILIDADES ESTADÍSTICAS
+#  UTILIDADES ESTADISTICAS
 # ─────────────────────────────────────────────
 
 def clean(text: str) -> str:
-    """Devuelve solo letras mayúsculas del texto."""
+    """
+    Devuelve solo letras mayusculas del texto.
+    """
     return "".join(c for c in text.upper() if c in ALPHABET)
 
 
 def index_of_coincidence(text: str) -> float:
     """
-    Calcula el Índice de Coincidencia (IC).
+    Calcula el Indice de Coincidencia (IC).
 
-    El IC mide qué tan cerca está la distribución de frecuencias
-    de una distribución no uniforme (idioma natural).
+    El IC mide qué tan cerca esta la distribucion de frecuencias
+    de una distribucion no uniforme (idioma natural).
 
     IC = Σ f_i * (f_i - 1) / (n * (n - 1))
 
-    - IC español  ≈ 0.0745
-    - IC inglés   ≈ 0.0667
+    - IC espanol  ≈ 0.0745
+    - IC ingles   ≈ 0.0667
     - IC uniforme ≈ 0.0385  (texto con letras al azar)
 
-    César y Afín NO cambian la distribución de frecuencias relativas
+    Caesar y Afin NO cambian la distribucion de frecuencias relativas
     (solo las desplazan/mezclan), por lo que conservan un IC alto.
     """
     letters = clean(text)
@@ -180,8 +188,8 @@ def index_of_coincidence(text: str) -> float:
 
 def chi_squared(observed_freq: dict[str, float], expected_freq: dict[str, float]) -> float:
     """
-    Chi-cuadrado entre la distribución observada y la esperada.
-    Cuanto menor, más parecido al idioma de referencia.
+    Chi-cuadrado entre la distribucion observada y la esperada.
+    Cuanto menor, mas parecido al idioma de referencia.
     """
     total = sum(observed_freq.values())
     if total == 0:
@@ -196,7 +204,9 @@ def chi_squared(observed_freq: dict[str, float], expected_freq: dict[str, float]
 
 
 def letter_frequencies(text: str) -> dict[str, float]:
-    """Devuelve el conteo de letras del texto limpio."""
+    """
+    Devuelve el conteo de letras del texto limpio.
+    """
     letters = clean(text)
     return Counter(letters)
 
@@ -208,12 +218,14 @@ def letter_frequencies(text: str) -> dict[str, float]:
 class IDecipher(ABC):
     @abstractmethod
     def decipher(self, text: str) -> tuple[str, str]:
-        """Descifra el texto y devuelve (texto_descifrado, clave_como_str)."""
+        """
+        Descifra el texto y devuelve (texto_descifrado, clave_como_str).
+        """
         pass
 
 
 # ─────────────────────────────────────────────
-#  DESCIFRADOR CÉSAR
+#  DESCIFRADOR CAESAR
 # ─────────────────────────────────────────────
 
 class CaesarDecipher(IDecipher):
@@ -240,7 +252,7 @@ class CaesarDecipher(IDecipher):
             freq = letter_frequencies(decoded)
             chi = chi_squared(freq, FREQ_SPANISH)
             ws = word_validity_score(plain)
-            # Prioridad: mayor porcentaje de palabras válidas; en empate, menor chi².
+            # Prioridad: mayor porcentaje de palabras validas; en empate, menor chi².
             if ws > best_ws or (ws == best_ws and chi < best_chi):
                 best_ws = ws
                 best_chi = chi
@@ -251,19 +263,19 @@ class CaesarDecipher(IDecipher):
 
 
 # ─────────────────────────────────────────────
-#  DESCIFRADOR AFÍN
+#  DESCIFRADOR AFIN
 # ─────────────────────────────────────────────
 
 class AfinDecipher(IDecipher):
     """
-    El cifrado Afín usa E(x) = (a·x + b) mod 26.
+    El cifrado Afin usa E(x) = (a·x + b) mod 26.
     Para descifrar: D(y) = a⁻¹ · (y - b) mod 26
 
-    Condición: 'a' debe ser coprimo con 26.
-    Valores válidos de a: {1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25}
+    Condicion: 'a' debe ser coprimo con 26.
+    Valores validos de a: {1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25}
 
     Estrategia:
-        - Fuerza bruta sobre todos los pares (a, b) válidos: 12 × 26 = 312 combinaciones.
+        - Fuerza bruta sobre todos los pares (a, b) validos: 12 × 26 = 312 combinaciones.
         - Para cada par, descifrar y calcular chi².
         - Elegir el par con menor chi².
     """
@@ -273,7 +285,9 @@ class AfinDecipher(IDecipher):
 
     @staticmethod
     def mod_inverse(a: int, m: int) -> int:
-        """Inverso modular de a mod m usando el algoritmo extendido de Euclides."""
+        """
+        Inverso modular de a mod m usando el algoritmo extendido de Euclides.
+        """
         for x in range(1, m):
             if (a * x) % m == 1:
                 return x
@@ -303,21 +317,21 @@ class AfinDecipher(IDecipher):
 
 
 # ─────────────────────────────────────────────
-#  DESCIFRADOR MONOALFABÉTICO
+#  DESCIFRADOR MONOALFABETICO
 # ─────────────────────────────────────────────
 
 class MonoalphabeticDecipher(IDecipher):
     """
-    La sustitución monoalfabética tiene 26! ≈ 4×10²⁶ claves posibles.
-    La fuerza bruta es inviable; usamos búsqueda local iterada.
+    La sustitución monoalfabetica tiene 26! ≈ 4×10²⁶ claves posibles.
+    La fuerza bruta es inviable; usamos busqueda local iterada.
 
     Estrategia (Iterated Local Search con bigramas):
         1. Mapeo inicial por frecuencia de letras.
         2. Hill-climbing con scoring de bigramas (log-probabilidad):
-           los bigramas ofrecen un paisaje mucho más discriminante que los monogramas.
+           los bigramas ofrecen un paisaje mucho mas discriminante que los monogramas.
         3. Perturbación + re-escala (20 reinicios): aplicar 4 swaps aleatorios
            al mejor mapeo encontrado y repetir el hill-climbing para escapar
-           de mínimos locales.
+           de minimos locales.
     """
 
     _RESTARTS = 60
@@ -361,7 +375,7 @@ class MonoalphabeticDecipher(IDecipher):
                         a, b = ALPHABET[i], ALPHABET[j]
                         m[a], m[b] = m[b], m[a]
                         ns = score(m)
-                        if ns > s:   # mayor log-prob = más español
+                        if ns > s:   # mayor log-prob = mas español
                             s = ns
                             improved = True
                         else:
@@ -370,7 +384,7 @@ class MonoalphabeticDecipher(IDecipher):
 
         best_mapping, best_score = hill_climb(mapping)
 
-        # Búsqueda local iterada: perturbar el mejor mapeo y re-escalar
+        # Busqueda local iterada: perturbar el mejor mapeo y re-escalar
         rng = random.Random()  # semilla aleatoria para mayor diversidad
         for _ in range(self._RESTARTS):
             candidate = dict(best_mapping)
@@ -386,22 +400,17 @@ class MonoalphabeticDecipher(IDecipher):
         key_str = " ".join(f"{c}→{best_mapping[c]}" for c in sorted(best_mapping))
         return best_plain, f"tabla: {key_str}"
 
-
-# ─────────────────────────────────────────────
-#  CLASE PRINCIPAL: DETECCIÓN + DESPACHO
-# ─────────────────────────────────────────────
-
 class Decipher:
     """
     Orquesta la detección del cifrado y llama al descifrador correcto.
 
     Flujo:
-        1. Calcular el Índice de Coincidencia del texto.
-        2. Si IC ≥ 0.060 → sustitución simple (César o Afín).
-           a. Intentar descifrar como César (k puro, a=1).
-           b. Intentar descifrar como Afín  (a≠1).
+        1. Calcular el Indice de Coincidencia del texto.
+        2. Si IC ≥ 0.060 → sustitución simple (Caesar o Afin).
+           a. Intentar descifrar como Caesar (k puro, a=1).
+           b. Intentar descifrar como Afin  (a≠1).
            c. Comparar chi² de ambos; el menor gana.
-              Si el ganador tiene a=1 → César; si a≠1 → Afín.
+              Si el ganador tiene a=1 → Caesar; si a≠1 → Afin.
         3. Si IC < 0.060 → sustitución monoalfabética general.
     """
 
@@ -410,7 +419,7 @@ class Decipher:
         self._afin   = AfinDecipher()
         self._mono   = MonoalphabeticDecipher()
 
-    # ── API pública ──────────────────────────
+    # ── API publica ──────────────────────────
 
     def main(self, text: str) -> tuple[str, str, str]:
         """
@@ -428,26 +437,26 @@ class Decipher:
 
         return method, plain, key
 
-    # ── Detección ────────────────────────────
+    # ── Deteccion ────────────────────────────
 
     def _detect_pattern(self, text: str) -> str:
         """
-        Detecta el tipo de cifrado combinando validación NLP y estadísticas.
+        Detecta el tipo de cifrado combinando validacion NLP y estadísticas.
 
         Flujo:
-          1. Búsqueda por diccionario: prueba todos los pares clave César/Afín
+          1. Búsqueda por diccionario: prueba todos los pares clave Caesar/Afin
              y verifica si el texto descifrado contiene palabras españolas reales.
              Fiable incluso para palabras sueltas o textos cortos.
           2. Fallback estadístico (textos sin espacios o vocabulario no estándar):
-             - IC alto  → César o Afín (permutación lineal).
+             - IC alto  → Caesar o Afin (permutación lineal).
              - IC bajo  → Monoalfabético general.
         """
-        # 1. NLP: verificación por diccionario (prioridad sobre estadísticas).
+        # 1. NLP: verificacion por diccionario (prioridad sobre estadisticas).
         word_method = self._detect_by_word_lookup(text)
         if word_method is not None:
             return word_method
 
-        # 2. Fallback estadístico.
+        # 2. Fallback estadistico.
         ic = index_of_coincidence(text)
         if ic >= IC_SPANISH_THRESHOLD:
             return self._distinguish_caesar_afin(text)
@@ -456,10 +465,10 @@ class Decipher:
 
     def _detect_by_word_lookup(self, text: str) -> str | None:
         """
-        Prueba los 26 desplazamientos César y los 312 pares (a,b) Afín.
+        Prueba los 26 desplazamientos Caesar y los 312 pares (a,b) Afin.
         Para cada clave descifrada calcula el porcentaje de palabras españolas
         válidas. Si el mejor supera el umbral (0.5), devuelve el tipo de cifrado;
-        si no, devuelve None para ceder el turno al análisis estadístico.
+        si no, devuelve None para ceder el turno al analisis estadistico.
 
         Requiere que el texto cifrado conserve los espacios originales.
         """
@@ -482,9 +491,9 @@ class Decipher:
                     best_a_ws, best_a_chi, best_a_a = ws, chi, a
 
         if best_c_ws == 0.0 and best_a_ws == 0.0:
-            return None  # Sin palabras reconocibles → ceder al método estadístico
+            return None  # Sin palabras reconocibles → ceder al método estadistico
 
-        # Elegir el cifrado con mayor porcentaje de palabras válidas.
+        # Elegir el cifrado con mayor porcentaje de palabras validas.
         # Si ambos tienen un score muy bajo (< 0.3) con un texto largo,
         # probablemente sea un falso positivo; ceder a estadísticas.
         if max(best_c_ws, best_a_ws) < 0.3 and len(clean(text)) > 30:
@@ -496,8 +505,8 @@ class Decipher:
             return "Caesar"
 
         # Empate en word score.
-        # Para un solo token (sin espacios) preferir César: Afín tiene 312 claves vs 26
-        # de César, por lo que es ~12x más probable encontrar un falso positivo.
+        # Para un solo token (sin espacios) preferir Caesar: Afin tiene 312 claves vs 26
+        # de Caesar, por lo que es ~12x más probable encontrar un falso positivo.
         # Para frases con espacios la ambigüedad es mucho menor; usar chi².
         has_spaces = ' ' in text.upper()
         if not has_spaces:
@@ -508,30 +517,30 @@ class Decipher:
 
     def _distinguish_caesar_afin(self, text: str) -> str:
         """
-        Descifra con ambos métodos y elige el que produce menor chi².
-        Si el mejor descifrado afín tiene a=1, es César (caso especial).
+        Descifra con ambos metodos y elige el que produce menor chi².
+        Si el mejor descifrado afin tiene a=1, es Caesar (caso especial).
 
-        Pero ANTES de decidir entre César/Afín, verificamos si la sustitución
+        Pero ANTES de decidir entre Caesar/Afin, verificamos si la sustitución
         es realmente matemática o es monoalfabética arbitraria:
 
         Prueba de linealidad:
-            Si el cifrado es Afín (incluyendo César), entonces para cualquier
+            Si el cifrado es Afin (incluyendo Caesar), entonces para cualquier
             par de letras (x1, y1) y (x2, y2) se debe cumplir:
                 y2 - y1 ≡ a · (x2 - x1)  (mod 26)
-            Es decir, las diferencias de posición entre letras cifradas y
-            originales son constantes bajo una función lineal.
-            Si esta consistencia falla para muchos pares del texto, es monoalfabético.
+            Es decir, las diferencias de posicion entre letras cifradas y
+            originales son constantes bajo una funcion lineal.
+            Si esta consistencia falla para muchos pares del texto, es monoalfabetico.
         """
         letters = clean(text)
 
-        # ─── Prueba de linealidad con las letras más frecuentes ───────────────
-        # Tomar las 6 letras más frecuentes del español y del texto cifrado.
-        # Intentar inferir 'a' y 'b' desde dos pares y verificar en los demás.
+        # ─── Prueba de linealidad con las letras mas frecuentes ───────────────
+        # Tomar las 6 letras mas frecuentes del español y del texto cifrado.
+        # Intentar inferir 'a' y 'b' desde dos pares y verificar en los demas.
         is_affine = self._test_affine_structure(letters)
         if not is_affine:
             return "Monoalphabetic"
 
-        # ─── Distinguir César vs Afín ────────────────────────────────────────
+        # ─── Distinguir Caesar vs Afin ────────────────────────────────────────
         best_chi_caesar = float('inf')
         for k in range(N):
             decoded = "".join(ALPHABET[(ALPHABET.index(c) - k) % N] for c in letters)
@@ -560,21 +569,21 @@ class Decipher:
 
     def _test_affine_structure(self, letters: str) -> bool:
         """
-        Prueba si el texto tiene estructura de cifrado afín verificando
+        Prueba si el texto tiene estructura de cifrado afin verificando
         el texto COMPLETO, no solo las letras más frecuentes.
 
-        Un cifrado afín E(x) = (a·x + b) mod 26 implica que la misma letra
-        de entrada SIEMPRE produce la misma letra de salida Y que esa función
+        Un cifrado afin E(x) = (a·x + b) mod 26 implica que la misma letra
+        de entrada SIEMPRE produce la misma letra de salida Y que esa funcion
         es lineal: conocidos dos pares (x1,y1) y (x2,y2), podemos derivar
         el (a, b) único y verificar que todo el texto lo respete.
 
         Estrategia:
             Para cada par (a, b) candidato (312 combinaciones):
                 1. Descifrar el texto completo con E⁻¹.
-                2. Contar letras distintas que NO encajan → si es 0, es afín/César.
-            Si ningún (a,b) lo explica perfectamente → es monoalfabético.
+                2. Contar letras distintas que NO encajan → si es 0, es afin/Caesar.
+            Si ningun (a,b) lo explica perfectamente → es monoalfabetico.
 
-        Nota: César es el caso a=1, que también pasará este test.
+        Nota: Caesar es el caso a=1, que tambien pasara este test.
         """
         for a in AfinDecipher.VALID_A:
             a_inv = AfinDecipher.mod_inverse(a, N)
@@ -584,10 +593,10 @@ class Decipher:
                     ALPHABET[(a_inv * (ALPHABET.index(c) - b)) % N] for c in letters
                 )
                 chi = chi_squared(letter_frequencies(decoded), FREQ_SPANISH)
-                # Un texto bien descifrado tendrá chi² muy bajo (< 30 para texto largo)
-                # Un texto monoalfabético tendrá chi² alto para todos los (a,b)
+                # Un texto bien descifrado tendra chi² muy bajo (< 30 para texto largo)
+                # Un texto monoalfabetico tendra chi² alto para todos los (a,b)
                 n = len(letters)
-                # Umbral dinámico: textos largos permiten menos tolerancia
+                # Umbral dinamico: textos largos permiten menos tolerancia
                 chi_threshold = max(20.0, 150.0 / math.sqrt(n))
                 if chi < chi_threshold:
                     return True
@@ -599,7 +608,7 @@ if __name__ == "__main__":
     engine = Decipher()
 
     # # Texto en español suficientemente largo para que el IC sea estadísticamente válido.
-    # # Para textos muy cortos (<100 letras) el IC es poco confiable.
+    # # Para textos muy cortos (<100 letras).
     # sample = (
     #     "EL ANALISIS DE FRECUENCIA ES UNA TECNICA FUNDAMENTAL EN CRIPTOGRAFIA "
     #     "QUE PERMITE IDENTIFICAR PATRONES EN TEXTOS CIFRADOS MEDIANTE LA "
