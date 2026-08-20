@@ -54,12 +54,16 @@ def menu_afin():
 
 def menu_monoalfabetico():
     print("\n >> Cifrado Monoalfabetico")
-    print("WIP . . .")
-    # TODO
-    # texto = input("Texto a cifrar: ")
-    # clave = input("Clave: ").strip()      # -> cambiar si es necesario
+    texto = input("Texto a cifrar: ")
+    clave = input("Palabra clave o alfabeto completo: ").strip()
 
-    # print("Resultado:", monoalphabetic_cipher(texto, clave))
+    if not clave:
+        print("La clave no puede estar vacia.")
+        return
+
+    resultado = monoalphabetic_cipher(texto, clave)
+    print("Resultado:", resultado)
+    print("--------------------------")
 
 def menu_decifrado():
     print("\n >> Descifrado automatico")
